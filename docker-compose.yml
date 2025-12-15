@@ -1,0 +1,29 @@
+services:
+  db:
+    image: postgres:16
+    container_name: javipos_db
+    environment:
+      POSTGRES_USER: javipos
+      POSTGRES_PASSWORD: javipos_dev
+      POSTGRES_DB: javipos
+    ports:
+      - "5432:5432"
+    volumes:
+      - javipos_pgdata:/var/lib/postgresql/data
+
+  backend:
+    build: ./backend
+    container_name: javipos_backend
+    environment:
+      DATABASE_URL: postgresql+psycopg://javipos:javipos_dev@db:5432/javipos
+      JWT_SECRET: "dev_only_change_me"
+      CORS_ORIGINS: "*"
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+    volumes:
+      - ./backend:/app
+
+volumes:
+  javipos_pgdata:
