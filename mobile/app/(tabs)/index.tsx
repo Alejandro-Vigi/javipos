@@ -1,98 +1,136 @@
-import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
-
-import { HelloWave } from '@/components/hello-wave';
-import ParallaxScrollView from '@/components/parallax-scroll-view';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Link } from 'expo-router';
+import React, { useEffect, useRef, useState } from "react";
+import { Alert, Pressable, SafeAreaView, ScrollView, Text, View } from "react-native";
+import { WS_URL } from "@/constants/config";
+import { health, listTables, seed } from "@/lib/api";
+import { useDrawerStatus } from "@react-navigation/drawer";
 
 export default function HomeScreen() {
-  return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.reactLogo}
-        />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
-        <HelloWave />
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{' '}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({
-              ios: 'cmd + d',
-              android: 'cmd + m',
-              web: 'F12',
-            })}
-          </ThemedText>{' '}
-          to open developer tools.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <Link href="/modal">
-          <Link.Trigger>
-            <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-          </Link.Trigger>
-          <Link.Preview />
-          <Link.Menu>
-            <Link.MenuAction title="Action" icon="cube" onPress={() => alert('Action pressed')} />
-            <Link.MenuAction
-              title="Share"
-              icon="square.and.arrow.up"
-              onPress={() => alert('Share pressed')}
-            />
-            <Link.Menu title="More" icon="ellipsis">
-              <Link.MenuAction
-                title="Delete"
-                icon="trash"
-                destructive
-                onPress={() => alert('Delete pressed')}
-              />
-            </Link.Menu>
-          </Link.Menu>
-        </Link>
+  const drawerStatus = useDrawerStatus();
+  const isDrawerOpen = drawerStatus === "open";
+  const [healthData, setHealthData] = useState<any>(null);
+  const [tables, setTables] = useState<any[]>([]);
+  const [wsStatus, setWsStatus] = useState("desconectado");
+  const [msgs, setMsgs] = useState<string[]>([]);
+  const wsRef = useRef<WebSocket | null>(null);
 
-        <ThemedText>
-          {`Tap the Explore tab to learn more about what's included in this starter app.`}
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          {`When you're ready, run `}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
-      </ThemedView>
-    </ParallaxScrollView>
+  const addMsg = (m: string) => setMsgs((p) => [m, ...p].slice(0, 30));
+
+  const connectWs = () => {
+    try {
+      wsRef.current?.close();
+    } catch {}
+
+    const ws = new WebSocket(WS_URL);
+    wsRef.current = ws;
+    setWsStatus("conectando...");
+
+    ws.onopen = () => setWsStatus("conectado ✅");
+    ws.onclose = () => setWsStatus("desconectado");
+    ws.onerror = () => setWsStatus("error");
+    ws.onmessage = (ev) => {
+      if (isDrawerOpen) return;
+      try {
+        const j = JSON.parse(ev.data);
+        addMsg(`[WS] ${j.type}: ${j.msg ?? ""}`);
+      } catch {
+        addMsg(`[WS] ${ev.data}`);
+      }
+    };
+  };
+
+  useEffect(() => {
+    connectWs();
+    return () => {
+      try {
+        wsRef.current?.close();
+      } catch {}
+    };
+  }, []);
+
+  const doHealth = async () => {
+    try {
+      const j = await health();
+      setHealthData(j);
+      Alert.alert("OK", "Backend conectado ✅");
+    } catch {
+      Alert.alert("Error", "No conectó. Revisa IP del servidor / WiFi / firewall.");
+    }
+  };
+
+  const doSeed = async () => {
+    try {
+      await seed();
+      Alert.alert("OK", "Seed listo ✅");
+    } catch {
+      Alert.alert("Error", "Seed falló");
+    }
+  };
+
+  const doTables = async () => {
+    try {
+      const j = await listTables();
+      setTables(j);
+    } catch {
+      Alert.alert("Error", "No pude traer mesas");
+    }
+  };
+
+  return (
+    <SafeAreaView style={{ flex: 1, padding: 16, gap: 12 }}>
+      <Text style={{ fontSize: 22, fontWeight: "800" }}>JaviPOS (Dev)</Text>
+
+      <View style={{ flexDirection: "row", gap: 10, flexWrap: "wrap" }}>
+        <Pressable onPress={doHealth} style={{ padding: 12, backgroundColor: "#ddd", borderRadius: 12 }}>
+          <Text>Ping /health</Text>
+        </Pressable>
+
+        <Pressable onPress={doSeed} style={{ padding: 12, backgroundColor: "#ddd", borderRadius: 12 }}>
+          <Text>Seed</Text>
+        </Pressable>
+
+        <Pressable onPress={doTables} style={{ padding: 12, backgroundColor: "#eee", borderRadius: 12 }}>
+          <Text>Traer mesas</Text>
+        </Pressable>
+
+        <Pressable
+          onPress={() => wsRef.current?.send("hola desde android")}
+          style={{ padding: 12, backgroundColor: "#eee", borderRadius: 12 }}
+        >
+          <Text>Enviar WS</Text>
+        </Pressable>
+
+        <Pressable
+          onPress={connectWs}
+          style={{ padding: 12, backgroundColor: "#eee", borderRadius: 12 }}
+        >
+          <Text>Reconectar WS</Text>
+        </Pressable>
+      </View>
+
+      <View style={{ padding: 12, borderWidth: 1, borderColor: "#eee", borderRadius: 12 }}>
+        <Text style={{ fontWeight: "700" }}>Estado WS: {wsStatus}</Text>
+        <Text style={{ fontWeight: "700", marginTop: 6 }}>Health:</Text>
+        <Text style={{ color: "#555" }}>{healthData ? JSON.stringify(healthData) : "—"}</Text>
+      </View>
+
+      <Text style={{ fontWeight: "700" }}>Mesas:</Text>
+      <ScrollView style={{ maxHeight: 150, borderWidth: 1, borderColor: "#eee", borderRadius: 12, padding: 10 }}>
+        {tables.map((t) => (
+          <Text key={t.id} style={{ marginBottom: 6 }}>
+            {t.name} — {t.status}
+          </Text>
+        ))}
+        {tables.length === 0 && <Text style={{ color: "#777" }}>—</Text>}
+      </ScrollView>
+
+      <Text style={{ fontWeight: "700" }}>WS (últimos):</Text>
+      <ScrollView style={{ flex: 1, borderWidth: 1, borderColor: "#eee", borderRadius: 12, padding: 10 }}>
+        {msgs.map((m, i) => (
+          <Text key={i} style={{ marginBottom: 6 }}>
+            {m}
+          </Text>
+        ))}
+      </ScrollView>
+    </SafeAreaView>
   );
 }
-
-const styles = StyleSheet.create({
-  titleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  stepContainer: {
-    gap: 8,
-    marginBottom: 8,
-  },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
-  },
-});
